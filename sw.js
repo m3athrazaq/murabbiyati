@@ -1,5 +1,5 @@
 /* مربّيتي — service worker: keeps the app working offline and receives shared CSV files */
-const VERSION = 'murabbiyati-v1.0.0-eafdbb4b5d';
+const VERSION = 'murabbiyati-v1.0.0-e47b4278d6';
 const ASSETS = [
   './',
   './index.html',

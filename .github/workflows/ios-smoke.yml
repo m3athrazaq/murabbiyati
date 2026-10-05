@@ -106,6 +106,8 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
+          find smoke -type f -empty -delete 2>/dev/null || true   # GitHub refuses empty release files
+          ls -la smoke || true
           gh release delete ci-smoke-test --repo "${{ github.repository }}" --yes --cleanup-tag || true
           gh release create ci-smoke-test smoke/* --repo "${{ github.repository }}" --target "${{ github.sha }}" \
             --prerelease --latest=false --title "CI smoke test" --notes "Automated simulator run for ${{ github.sha }}"

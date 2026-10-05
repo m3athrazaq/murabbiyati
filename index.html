@@ -735,11 +735,28 @@ const diaperName = k => (DIAPER_KEYS.indexOf(k) >= 0 ? tr('diaper.' + k) : '');
 const presets = () => PRESET_KEYS.map(k => tr('preset.' + k));
 const quote = s => tr('quote', { s: s });
 const nRecords = n => tr('n.records', { n: n });
+/* A few browsers have no date/number data for some languages (desktop Chrome: Kazakh, Nepali, Sinhala) and would
+   quietly use the phone's own language instead; use the nearest language for dates and numbers in that case. */
+const INTL_NEAR = { kk: 'ru', ne: 'hi', si: 'en' };
+const intlLocCache = {};
+function intlLoc(kind) {
+  const k = kind + '|' + LANG;
+  if (!(k in intlLocCache)) {
+    let ok = false;
+    try { ok = Intl[kind].supportedLocalesOf([LANG]).length > 0; } catch (e) { ok = false; }
+    /* listed but without real data (month names come out as "M09") */
+    if (ok && kind === 'DateTimeFormat') { try { ok = !/^M\d+$/.test(new Intl.DateTimeFormat(LOCALE, { month: 'long' }).format(new Date(2026, 8, 15))); } catch (e) { ok = false; } }
+    intlLocCache[k] = ok ? LOCALE : (kind === 'ListFormat' ? '' : (INTL_NEAR[LANG] || 'en') + '-u-nu-latn');
+  }
+  return intlLocCache[k];
+}
 /* 'conjunction' for names ("A and B"); 'unit' for tallies ("Right 2, Left 3") */
 function listJoin(items, type) {
   /* Chinese and Japanese unit lists have no separator at all ("右侧 2左侧 3"), which is hard to read here */
   if (type === 'unit' && /^(zh|ja)\b/.test(LANG)) return items.join('、');
-  try { return new Intl.ListFormat(LOCALE, { style: type === 'unit' ? 'short' : 'long', type: type || 'conjunction' }).format(items); } catch (e) { return items.join(', '); }
+  const loc = intlLoc('ListFormat');
+  if (!loc) return items.join(isRTL() ? '، ' : ', ');
+  try { return new Intl.ListFormat(loc, { style: type === 'unit' ? 'short' : 'long', type: type || 'conjunction' }).format(items); } catch (e) { return items.join(', '); }
 }
 function sentence(s) {
   const c = s.charAt(0);
@@ -767,7 +784,7 @@ function dtf(o) {
   const k = LOCALE + '|' + JSON.stringify(o);
   let f = fmtCache.get(k);
   if (!f) {
-    try { f = new Intl.DateTimeFormat(LOCALE, o); } catch (e) { f = new Intl.DateTimeFormat('en', o); }
+    try { f = new Intl.DateTimeFormat(intlLoc('DateTimeFormat'), o); } catch (e) { f = new Intl.DateTimeFormat('en', o); }
     fmtCache.set(k, f);
   }
   return f;
@@ -779,7 +796,7 @@ function use24h() {
   if (v === true || v === false) return v;
   if (!(LOCALE in h24Cache)) {
     let hc = '';
-    try { hc = new Intl.DateTimeFormat(LOCALE, { hour: 'numeric' }).resolvedOptions().hourCycle || ''; } catch (e) { hc = ''; }
+    try { hc = new Intl.DateTimeFormat(intlLoc('DateTimeFormat'), { hour: 'numeric' }).resolvedOptions().hourCycle || ''; } catch (e) { hc = ''; }
     h24Cache[LOCALE] = hc === 'h23' || hc === 'h24';
   }
   return h24Cache[LOCALE];
@@ -1766,7 +1783,7 @@ function avgText(n, days) {
   if (!n) return tr('stats.none');
   const v = n / days;
   let s;
-  try { s = new Intl.NumberFormat(LOCALE, { maximumFractionDigits: v >= 10 ? 0 : 1 }).format(v); } catch (e) { s = v >= 10 ? Math.round(v).toString() : (Math.round(v * 10) / 10).toString(); }
+  try { s = new Intl.NumberFormat(intlLoc('NumberFormat'), { maximumFractionDigits: v >= 10 ? 0 : 1 }).format(v); } catch (e) { s = v >= 10 ? Math.round(v).toString() : (Math.round(v * 10) / 10).toString(); }
   return tr('stats.avg', { v: s });
 }
 

@@ -84,6 +84,7 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
+          find smoke -type f -empty -delete 2>/dev/null || true   # GitHub refuses empty release files
           ls -la smoke || true
           gh release delete ci-android-smoke --repo "${{ github.repository }}" --yes --cleanup-tag || true
           gh release create ci-android-smoke smoke/* --repo "${{ github.repository }}" --target "${{ github.sha }}" \
