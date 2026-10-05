@@ -1,0 +1,110 @@
+# Runs the app in an iPhone simulator, drives it with native/selftest/selftest.js
+# and publishes screenshots + results to the "ci-smoke-test" pre-release.
+name: iPhone simulator smoke test
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [iphone-app]
+    paths:
+      - 'index.html'
+      - 'native/**'
+      - '.github/workflows/ios-smoke.yml'
+
+permissions:
+  contents: write
+
+concurrency:
+  group: ios-smoke
+  cancel-in-progress: true
+
+jobs:
+  smoke:
+    runs-on: macos-26
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: native/package-lock.json
+
+      - name: App files + self-test hook (simulator build only)
+        run: |
+          rm -rf native/www && mkdir -p native/www
+          cp index.html manifest.webmanifest *.png native/www/
+          cp native/selftest/selftest.js native/www/selftest.js
+          python3 - <<'PY'
+          import pathlib
+          p = pathlib.Path("native/www/index.html")
+          s = p.read_text(encoding="utf-8")
+          p.write_text(s.replace("</body>", '<script src="selftest.js"></script>\n</body>'), encoding="utf-8")
+          PY
+
+      - name: Install + sync
+        working-directory: native
+        run: |
+          npm ci
+          npx cap sync ios
+
+      - name: Build for the simulator
+        working-directory: native/ios/App
+        run: |
+          if ! xcodebuild -project App.xcodeproj -scheme App -configuration Debug -sdk iphonesimulator \
+              -destination 'generic/platform=iOS Simulator' -derivedDataPath build-sim \
+              CODE_SIGNING_ALLOWED=NO build > sim-build.log 2>&1; then
+            grep -nE "error:" sim-build.log | head -60; tail -80 sim-build.log; exit 1
+          fi
+          ls build-sim/Build/Products/Debug-iphonesimulator/
+
+      - name: Boot an iPhone simulator in Arabic
+        run: |
+          UDID=$(xcrun simctl list devices available -j | python3 -c "
+          import json, sys
+          d = json.load(sys.stdin)['devices']
+          c = [(rt, x) for rt, xs in d.items() if 'iOS' in rt for x in xs if x['name'].startswith('iPhone')]
+          c.sort(key=lambda t: t[0])
+          print(c[-1][1]['udid'])")
+          echo "UDID=$UDID" >> "$GITHUB_ENV"
+          xcrun simctl boot "$UDID"
+          xcrun simctl bootstatus "$UDID" -b
+          xcrun simctl spawn "$UDID" defaults write "Apple Global Domain" AppleLanguages -array ar
+          xcrun simctl spawn "$UDID" defaults write "Apple Global Domain" AppleLocale -string ar_KW
+          xcrun simctl shutdown "$UDID"
+          xcrun simctl boot "$UDID"
+          xcrun simctl bootstatus "$UDID" -b
+          xcrun simctl list devices | grep "$UDID"
+
+      - name: Install, launch and capture
+        run: |
+          mkdir -p smoke
+          APP=native/ios/App/build-sim/Build/Products/Debug-iphonesimulator/App.app
+          xcrun simctl install "$UDID" "$APP"
+          xcrun simctl launch "$UDID" com.m3athrazaq.murabbiyati
+          for t in 05 09 15 21 27; do
+            sleep 6
+            xcrun simctl io "$UDID" screenshot "smoke/shot-$t.png" || true
+          done
+          sleep 8
+          xcrun simctl io "$UDID" screenshot smoke/shot-35.png || true
+          DATA=$(xcrun simctl get_app_container "$UDID" com.m3athrazaq.murabbiyati data)
+          ls -la "$DATA/Library" | tee smoke/library-listing.txt
+          cp "$DATA/Library/selftest-result.txt" smoke/ 2>/dev/null || echo "no result file" > smoke/selftest-result.txt
+          cat smoke/selftest-result.txt
+          # relaunch: data must still be there
+          xcrun simctl terminate "$UDID" com.m3athrazaq.murabbiyati || true
+          sleep 2
+          xcrun simctl launch "$UDID" com.m3athrazaq.murabbiyati
+          sleep 10
+          xcrun simctl io "$UDID" screenshot smoke/shot-relaunch.png || true
+          python3 -c "import json;d=json.load(open('$DATA/Library/murabbiyati-state.json'));print('records after relaunch:',len(d['records']),'rev',d['rev'])" | tee -a smoke/selftest-result.txt
+
+      - name: Publish results
+        if: always()
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release delete ci-smoke-test --repo "${{ github.repository }}" --yes --cleanup-tag || true
+          gh release create ci-smoke-test smoke/* --repo "${{ github.repository }}" --target "${{ github.sha }}" \
+            --prerelease --title "CI smoke test" --notes "Automated simulator run for ${{ github.sha }}"
