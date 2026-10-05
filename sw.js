@@ -1,5 +1,7 @@
 /* مربّيتي — service worker: keeps the app working offline and receives shared CSV files */
-const VERSION = 'murabbiyati-v1.0.0-4bdbfb7be9';
+const VERSION = 'murabbiyati-v1.0.0-3abbb870e8';
+/* the card reader's files (~9 MB) are cached on first use, in their own cache that app updates keep */
+const OCR_CACHE = 'murabbiyati-ocr-eddbb7af58';
 const ASSETS = [
   './',
   './index.html',
@@ -22,7 +24,7 @@ self.addEventListener('install', event => {
 self.addEventListener('activate', event => {
   event.waitUntil((async () => {
     const keys = await caches.keys();
-    await Promise.all(keys.filter(k => k.startsWith('murabbiyati-') && k !== VERSION).map(k => caches.delete(k)));
+    await Promise.all(keys.filter(k => k.startsWith('murabbiyati-') && k !== VERSION && k !== OCR_CACHE).map(k => caches.delete(k)));
     await self.clients.claim();
   })());
 });
@@ -76,8 +78,9 @@ self.addEventListener('fetch', event => {
     return;
   }
 
+  const ocr = url.pathname.indexOf('/ocr/') >= 0;
   event.respondWith((async () => {
-    const cache = await caches.open(VERSION);
+    const cache = await caches.open(ocr ? OCR_CACHE : VERSION);
     const hit = await cache.match(req, { ignoreSearch: true });
     if (hit) return hit;
     try {

@@ -12,6 +12,7 @@ on:
       - 'index.html'
       - 'manifest.webmanifest'
       - '*.png'
+      - 'ocr/**'
       - 'native/**'
       - '.github/workflows/apps.yml'
 
@@ -23,7 +24,7 @@ concurrency:
   cancel-in-progress: true
 
 env:
-  APP_VERSION: '1.1.0'
+  APP_VERSION: '1.2.0'
   BUILD_NUMBER: ${{ github.run_number }}
 
 jobs:
@@ -43,6 +44,7 @@ jobs:
         run: |
           rm -rf native/www && mkdir -p native/www
           cp index.html manifest.webmanifest *.png native/www/
+          cp -R ocr native/www/ocr   # vaccination-card reader (works offline inside the app)
 
       - name: Install Capacitor and sync the iOS project
         working-directory: native
@@ -116,6 +118,7 @@ jobs:
         run: |
           rm -rf native/www && mkdir -p native/www
           cp index.html manifest.webmanifest *.png native/www/
+          cp -R ocr native/www/ocr   # vaccination-card reader (works offline inside the app)
 
       - name: Install Capacitor and sync the Android project
         working-directory: native
@@ -140,7 +143,8 @@ jobs:
           BT=$(ls -d "$ANDROID_HOME"/build-tools/* | sort -V | tail -1)
           "$BT/apksigner" verify --verbose --print-certs "$APK" | tee verify.txt
           grep -qi "C7:9E:91:68:DA:7F:7D:A4:5E:3B:1E:06:B8:72:FD:79:AF:2B:E2:70:5F:8D:86:B2:ED:CC:7B:4F:0C:D7:49:D7\|c79e9168da7f7da45e3b1e06b872fd79af2be2705f8d86b2edcc7b4f0cd749d7" verify.txt
-          "$BT/aapt2" dump badging "$APK" | grep -E "^package:|^sdkVersion|^targetSdkVersion|^application-label:|^application-label-ar|^locales" | cut -c1-300
+          "$BT/aapt2" dump badging "$APK" | grep -E "^package:|^sdkVersion|^targetSdkVersion|^application-label:|^application-label-ar|^locales|^uses-permission" | cut -c1-300
+          "$BT/aapt2" dump badging "$APK" | grep -q "android.permission.POST_NOTIFICATIONS"   # reminders
           mkdir -p out && cp "$APK" out/murabbiyati.apk && ls -la out/
 
       - uses: actions/upload-artifact@v4
@@ -170,6 +174,7 @@ jobs:
             "تطبيق مربّيتي للهاتف — النسخة $APP_VERSION (بناء $BUILD_NUMBER)" "" \
             "- **أندرويد:** [murabbiyati.apk]($BASE/murabbiyati.apk) — افتح الرابط على الهاتف، ثم ثبّت الملف واسمح بالتثبيت من المتصفح عند السؤال." \
             "- **آيفون:** [murabbiyati.ipa]($BASE/murabbiyati.ipa) — يُثبَّت عبر SideStore أو Sideloadly بحساب Apple عادي، ويُجدَّد كل 7 أيام." \
+            "" "**الجديد في 1.2:** نوع الرضاعة، زر نوم/استيقاظ مع حساب مدة النوم، أكثر من طفل (اضغط مطولًا على الاسم)، تبويب الصحة: التطعيمات مع قراءة كرت التطعيم بالكاميرا، والمواعيد الطبية مع التقارير والتذكير، وتصاميم وألوان للصفحة الرئيسية، ونسخة احتياطية كاملة." \
             "" "الروابط أعلاه ثابتة وتشير دائمًا إلى آخر نسخة." > notes.md
           gh release create "$TAG" out/murabbiyati.ipa out/murabbiyati.apk \
             --repo "$REPO" \

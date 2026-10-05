@@ -21,6 +21,8 @@ adb shell settings put global window_animation_scale 0
 adb shell settings put global transition_animation_scale 0
 adb shell settings put global animator_duration_scale 0
 adb install -r "$APK"
+# reminders: let the app post notifications without the Android 13+ prompt (a real phone asks once)
+adb shell pm grant "$PKG" android.permission.POST_NOTIFICATIONS || true
 adb shell getprop ro.build.version.release | sed 's/^/Android /' | tee "$OUT/device.txt"
 adb shell dumpsys package com.google.android.webview | grep -m1 versionName | sed 's/^ */WebView /' | tee -a "$OUT/device.txt"
 adb shell am start -W -n "$PKG/.MainActivity"
@@ -40,7 +42,14 @@ if waitfor "WAIT send-intent" 60; then
     --eu android.intent.extra.STREAM "content://$PKG.fileprovider/my_cache_images/incoming/shared.csv" -n "$PKG/.MainActivity"
 fi
 waitfor "STEP summary2" 90 && shot 04-shared-summary
-if waitfor "STEP share-sheet" 60; then
+waitfor "STEP feed" 90 && shot 10-feed-type
+waitfor "STEP sleep" 60 && shot 11-sleep-wake
+waitfor "STEP children" 90 && shot 12-children
+waitfor "STEP design-modern" 60 && shot 13-design-modern
+waitfor "STEP design-calm" 30 && shot 14-design-calm
+waitfor "STEP design-contrast" 30 && shot 15-design-contrast
+waitfor "STEP health" 60 && shot 16-health
+if waitfor "STEP share-sheet" 300; then   # after the card reader (up to a few minutes on the emulator)
   sleep 3; shot 05-share-sheet
   adb shell input keyevent KEYCODE_BACK
 fi
@@ -53,8 +62,9 @@ if waitfor "WAIT back3" 60; then
   adb shell dumpsys activity activities | grep -E "ResumedActivity" | head -3 | tee "$OUT/after-back.txt"
   adb shell am start -n "$PKG/.MainActivity"
 fi
-waitfor "STEP language" 90 && sleep 1 && shot 10-other-language
-waitfor "DONE" 60
+waitfor "STEP language" 90 && sleep 1 && shot 17-other-language
+adb shell dumpsys alarm | grep -c "$PKG" | sed 's/^/alarms set by the app: /' | tee "$OUT/alarms.txt"
+waitfor "DONE" 90
 sleep 2
 res | tee "$OUT/selftest-result.txt"
 adb exec-out run-as "$PKG" cat files/murabbiyati-state.json > "$OUT/state.json" 2>/dev/null
@@ -62,7 +72,7 @@ adb exec-out run-as "$PKG" cat files/murabbiyati-state.json > "$OUT/state.json" 
 # data must survive a full restart of the app
 adb shell am force-stop "$PKG"
 adb shell am start -W -n "$PKG/.MainActivity"
-sleep 15; shot 11-relaunch
+sleep 15; shot 18-relaunch
 adb exec-out run-as "$PKG" cat files/murabbiyati-state.json > "$OUT/state-after.json" 2>/dev/null
 adb shell run-as "$PKG" cat files/selftest-relaunch.txt 2>/dev/null | tr -d '\r' | tee "$OUT/relaunch-1.txt"
 
@@ -71,7 +81,7 @@ adb shell am force-stop "$PKG"
 adb shell run-as "$PKG" rm -f files/selftest-relaunch.txt
 adb shell am start -W -a android.intent.action.VIEW -t text/csv \
   -d "content://$PKG.fileprovider/my_cache_images/incoming/cold.csv" -n "$PKG/.MainActivity"
-sleep 15; shot 12-cold-open
+sleep 15; shot 19-cold-open
 adb shell run-as "$PKG" cat files/selftest-relaunch.txt 2>/dev/null | tr -d '\r' | tee "$OUT/relaunch-2.txt"
 
 python3 - <<'PY' 2>&1 | tee -a "$OUT/selftest-result.txt"

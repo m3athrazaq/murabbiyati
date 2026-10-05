@@ -13,6 +13,15 @@
     "SystemBars": {
       "insetsHandling": "native",
       "initialViewportFitValueHint": "cover"
+    },
+    "LocalNotifications": {
+      "smallIcon": "ic_stat_notify",
+      "iconColor": "#2B5848",
+      "presentationOptions": [
+        "sound",
+        "banner",
+        "list"
+      ]
     }
   }
 }

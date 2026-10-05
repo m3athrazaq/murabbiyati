@@ -8,6 +8,7 @@ on:
     branches: [iphone-app]
     paths:
       - 'index.html'
+      - 'ocr/**'
       - 'native/**'
       - '.github/workflows/ios-smoke.yml'
 
@@ -21,7 +22,7 @@ concurrency:
 jobs:
   smoke:
     runs-on: macos-26
-    timeout-minutes: 45
+    timeout-minutes: 50
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -34,6 +35,7 @@ jobs:
         run: |
           rm -rf native/www && mkdir -p native/www
           cp index.html manifest.webmanifest *.png native/www/
+          cp -R ocr native/www/ocr   # vaccination-card reader (works offline inside the app)
           cp native/selftest/selftest.js native/www/selftest.js
           python3 - <<'PY'
           import pathlib
@@ -83,13 +85,16 @@ jobs:
           python3 native/ios-localize.py "$APP" index.html
           xcrun simctl install "$UDID" "$APP"
           xcrun simctl launch "$UDID" com.m3athrazaq.murabbiyati
-          for t in 05 09 15 21 27; do
-            sleep 6
-            xcrun simctl io "$UDID" screenshot "smoke/shot-$t.png" || true
-          done
-          sleep 8
-          xcrun simctl io "$UDID" screenshot smoke/shot-35.png || true
+          sleep 3
           DATA=$(xcrun simctl get_app_container "$UDID" com.m3athrazaq.murabbiyati data)
+          # a screenshot every few seconds until the self-test is done (the card reader takes a while)
+          for i in $(seq -w 1 60); do
+            sleep 5
+            xcrun simctl io "$UDID" screenshot "smoke/shot-$i.png" >/dev/null 2>&1 || true
+            if grep -qE "^(DONE|ERROR)" "$DATA/Library/selftest-result.txt" 2>/dev/null; then break; fi
+          done
+          sleep 4
+          xcrun simctl io "$UDID" screenshot smoke/shot-end.png || true
           ls -la "$DATA/Library" | tee smoke/library-listing.txt
           cp "$DATA/Library/selftest-result.txt" smoke/ 2>/dev/null || echo "no result file" > smoke/selftest-result.txt
           cat smoke/selftest-result.txt

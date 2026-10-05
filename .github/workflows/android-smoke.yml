@@ -9,6 +9,7 @@ on:
     branches: [iphone-app]
     paths:
       - 'index.html'
+      - 'ocr/**'
       - 'native/**'
       - '.github/workflows/android-smoke.yml'
 
@@ -41,6 +42,7 @@ jobs:
         run: |
           rm -rf native/www && mkdir -p native/www
           cp index.html manifest.webmanifest *.png native/www/
+          cp -R ocr native/www/ocr   # vaccination-card reader (works offline inside the app)
           cp native/selftest/selftest.js native/www/selftest.js
           python3 - <<'PY'
           import pathlib
