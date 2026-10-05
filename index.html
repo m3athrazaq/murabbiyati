@@ -1190,6 +1190,7 @@ function setBackgroundInert(on) {
   else { app.removeAttribute('aria-hidden'); app.inert = false; }
 }
 function openSheet(o) {
+  hideToast();   /* an older message would cover the bottom of the new window */
   const wrap = document.createElement('div');
   wrap.className = 'sheet-wrap';
   wrap.innerHTML = '<div class="scrim"></div><div class="sheet' + (o.cls ? ' ' + o.cls : '') + '" role="dialog" aria-modal="true" tabindex="-1"><div class="grabber" aria-hidden="true"></div>' + o.html + '</div>';
