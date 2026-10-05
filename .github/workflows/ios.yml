@@ -1,0 +1,102 @@
+# Builds the iPhone app (unsigned .ipa) on a free GitHub macOS machine.
+# Install the .ipa with SideStore or Sideloadly using a normal (free) Apple Account.
+name: iPhone app (IPA)
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main, iphone-app]
+    paths:
+      - 'index.html'
+      - 'manifest.webmanifest'
+      - '*.png'
+      - 'native/**'
+      - '.github/workflows/ios.yml'
+
+permissions:
+  contents: write
+
+concurrency:
+  group: ios-build
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: macos-26
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: native/package-lock.json
+
+      - name: Copy the app files into the iPhone project
+        run: |
+          rm -rf native/www && mkdir -p native/www
+          cp index.html manifest.webmanifest *.png native/www/
+
+      - name: Install Capacitor
+        working-directory: native
+        run: npm ci
+
+      - name: Sync the iOS project
+        working-directory: native
+        run: npx cap sync ios
+
+      - name: Xcode version
+        run: xcodebuild -version
+
+      - name: Build (unsigned)
+        working-directory: native/ios/App
+        run: |
+          if ! xcodebuild \
+              -project App.xcodeproj \
+              -scheme App \
+              -configuration Release \
+              -sdk iphoneos \
+              -destination 'generic/platform=iOS' \
+              -derivedDataPath build \
+              CURRENT_PROJECT_VERSION=${{ github.run_number }} \
+              CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY="" \
+              build > build.log 2>&1; then
+            echo "::group::errors"; grep -nE "error:|fatal error|Undefined symbol" build.log | head -80; echo "::endgroup::"
+            tail -120 build.log
+            exit 1
+          fi
+          grep -E "BUILD SUCCEEDED" build.log
+          test -d build/Build/Products/Release-iphoneos/App.app
+
+      - name: Package the IPA
+        run: |
+          mkdir -p out/Payload
+          cp -R native/ios/App/build/Build/Products/Release-iphoneos/App.app out/Payload/
+          cd out && zip -qry murabbiyati.ipa Payload && ls -la murabbiyati.ipa
+          /usr/libexec/PlistBuddy -c "Print :CFBundleIdentifier" -c "Print :CFBundleShortVersionString" -c "Print :CFBundleVersion" Payload/App.app/Info.plist
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: murabbiyati-ipa
+          path: out/murabbiyati.ipa
+          if-no-files-found: error
+
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: build-log
+          path: native/ios/App/build.log
+          if-no-files-found: ignore
+
+      - name: Publish a release with a direct download link
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          TAG="ios-1.0.${{ github.run_number }}"
+          gh release create "$TAG" out/murabbiyati.ipa \
+            --repo "${{ github.repository }}" \
+            --target "${{ github.sha }}" \
+            --title "مربّيتي للآيفون 1.0.${{ github.run_number }}" \
+            --notes "ملف IPA للتثبيت على الآيفون عبر SideStore أو Sideloadly بحساب Apple عادي. الرابط الثابت لآخر نسخة: https://github.com/${{ github.repository }}/releases/latest/download/murabbiyati.ipa" \
+            --latest

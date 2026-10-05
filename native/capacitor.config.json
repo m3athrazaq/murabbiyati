@@ -1,0 +1,12 @@
+{
+  "appId": "com.m3athrazaq.murabbiyati",
+  "appName": "مربّيتي",
+  "webDir": "www",
+  "backgroundColor": "#e4eae6",
+  "ios": {
+    "contentInset": "never",
+    "backgroundColor": "#e4eae6",
+    "scrollEnabled": true,
+    "limitsNavigationsToAppBoundDomains": false
+  }
+}

@@ -1,0 +1,19 @@
+{
+  "name": "murabbiyati-native",
+  "version": "1.0.0",
+  "private": true,
+  "description": "iPhone build of مربّيتي (Capacitor shell around the offline web app)",
+  "scripts": {
+    "sync": "cap sync ios"
+  },
+  "dependencies": {
+    "@capacitor/app": "^8.1.2",
+    "@capacitor/core": "^8.5.2",
+    "@capacitor/filesystem": "^8.1.4",
+    "@capacitor/ios": "^8.5.2",
+    "@capacitor/share": "^8.0.3"
+  },
+  "devDependencies": {
+    "@capacitor/cli": "^8.5.2"
+  }
+}

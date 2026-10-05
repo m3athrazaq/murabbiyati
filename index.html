@@ -114,7 +114,8 @@ html[data-theme="dark"][data-shell="pink"]{--shell:#3b2830;--shell-hi:#4a333d;--
 html,body{margin:0}
 body{background:var(--wall);color:var(--ink);font-family:var(--font);font-size:17px;line-height:1.55;-webkit-font-smoothing:antialiased;text-rendering:optimizeLegibility;overscroll-behavior-y:none;min-height:100vh;min-height:100dvh}
 button,input,select,textarea{font:inherit;color:inherit;letter-spacing:inherit}
-button{cursor:pointer;-webkit-user-select:none;user-select:none}
+button{cursor:pointer;-webkit-user-select:none;user-select:none;-webkit-touch-callout:none;touch-action:manipulation}
+html{-webkit-text-size-adjust:100%;text-size-adjust:100%}
 :focus-visible{outline:3px solid var(--accent);outline-offset:2px}
 [hidden]{display:none!important}
 .sr-only{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}
@@ -838,20 +839,40 @@ function idbRun(mode, fn) {
 const idbGet = k => idbRun('readonly', st => st.get(k));
 const idbSet = (k, v) => idbRun('readwrite', st => st.put(v, k));
 const idbDel = k => idbRun('readwrite', st => st.delete(k));
+/* ---------- inside the iPhone app (Capacitor) a third copy lives in a file in the app's Library folder ---------- */
+function isNative() {
+  try { return !!(window.Capacitor && window.Capacitor.isNativePlatform && window.Capacitor.isNativePlatform()); } catch (e) { return false; }
+}
+function plug(name) { return (isNative() && window.Capacitor.Plugins && window.Capacitor.Plugins[name]) || null; }
+const NATIVE_STATE = 'murabbiyati-state.json';
+async function nativeLoad() {
+  const fs = plug('Filesystem');
+  if (!fs) return null;
+  try { const r = await fs.readFile({ path: NATIVE_STATE, directory: 'LIBRARY', encoding: 'utf8' }); return r && r.data ? JSON.parse(r.data) : null; }
+  catch (e) { return null; }
+}
+async function nativeSave(json) {
+  const fs = plug('Filesystem');
+  if (!fs) return false;
+  await fs.writeFile({ path: NATIVE_STATE, data: json, directory: 'LIBRARY', encoding: 'utf8', recursive: true });
+  return true;
+}
+
 const revOf = s => (s && +s.rev) || 0;
 async function storeLoad() {
   let a = null, b = null;
   try { a = await idbTry(() => idbGet('state')); } catch (e) { a = null; }
   try { const raw = localStorage.getItem(LS_KEY); if (raw) b = JSON.parse(raw); } catch (e) { b = null; }
-  if (a && b) return revOf(b) > revOf(a) ? b : a;
-  return a || b || null;
+  const c = await nativeLoad();
+  return [a, b, c].reduce((best, x) => (x && (!best || revOf(x) > revOf(best)) ? x : best), null);
 }
 async function storeSave(s) {
   const json = JSON.stringify(s);
-  let inIdb = false, inLs = false;
+  let inIdb = false, inLs = false, inFile = false;
   try { await idbTry(() => idbSet('state', JSON.parse(json))); inIdb = true; } catch (e) { console.warn('IndexedDB save failed', e); }
   try { localStorage.setItem(LS_KEY, json); inLs = true; } catch (e) { /* full: IndexedDB holds the main copy */ }
-  if (!inIdb && !inLs) throw new Error('save-failed');
+  try { inFile = await nativeSave(json); } catch (e) { console.warn('file save failed', e); }
+  if (!inIdb && !inLs && !inFile) throw new Error('save-failed');
 }
 
 /* =====================================================================
@@ -1635,8 +1656,25 @@ function downloadBlob(blob, name) {
   document.body.appendChild(a); a.click();
   setTimeout(() => { URL.revokeObjectURL(url); a.remove(); }, 5000);
 }
+async function nativeShareCSV(csv, name) {
+  const fs = plug('Filesystem'), sh = plug('Share');
+  if (!fs || !sh) return false;
+  const w = await fs.writeFile({ path: 'exports/' + name, data: csv, directory: 'CACHE', encoding: 'utf8', recursive: true });
+  await sh.share({ title: name, files: [w.uri] });
+  return true;
+}
 async function exportCSV(mode) {
   const csv = buildCSV(), name = exportName(), n = state.records.length;
+  if (isNative()) {
+    try {
+      if (await nativeShareCSV(csv, name)) { state.meta.lastExportAt = Date.now(); changed(); toast('جُهّز الملف (' + nRecords(n) + ').'); return; }
+    } catch (e) {
+      if (/cancel/i.test(String((e && (e.message || e.errorMessage)) || e))) return;
+      console.error(e);
+      toast('تعذّر فتح قائمة المشاركة. حاول مرة أخرى.');
+      return;
+    }
+  }
   const blob = new Blob([csv], { type: 'text/csv;charset=utf-8' });
   if (mode === 'share') {
     let file = null;
@@ -1971,7 +2009,7 @@ function showImportSummary(plan, fileName, before, named) {
 
 /* ---------- share tab rendering ---------- */
 let deferredPrompt = null;
-const isStandalone = () => (window.matchMedia && matchMedia('(display-mode: standalone)').matches) || navigator.standalone === true;
+const isStandalone = () => isNative() || (window.matchMedia && matchMedia('(display-mode: standalone)').matches) || navigator.standalone === true;
 const isIOS = () => /iphone|ipad|ipod/i.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
 function renderShare() {
   const d = derived(), n = d.sorted.length, m = state.meta;
@@ -1981,7 +2019,8 @@ function renderShare() {
   if (m.lastImport) lines.push('آخر استيراد: ' + fmtWhen(m.lastImport.at) + '، أُضيف ' + nRecords(m.lastImport.added) + '.');
   $('#shareMeta').innerHTML = lines.map(l => '<p>' + esc(l) + '</p>').join('');
   let card;
-  if (isStandalone()) card = '<p>التطبيق مثبّت ويعمل دون إنترنت.</p>';
+  if (isNative()) card = '<p>هذا تطبيق مثبّت ويعمل دون إنترنت. لاستيراد ملف وصلك في واتساب: افتحه هناك واختر «مشاركة» ثم «مربّيتي»، أو احفظه في «الملفات» واضغط «استيراد ملف».</p>';
+  else if (isStandalone()) card = '<p>التطبيق مثبّت ويعمل دون إنترنت.</p>';
   else if (deferredPrompt) card = '<p>ثبّته على الشاشة الرئيسية ليفتح كتطبيق ويعمل دون إنترنت.</p><button class="btn primary small" type="button" data-act="install">تثبيت التطبيق</button>';
   else if (isIOS()) card = '<p>على آيفون: افتح الرابط في Safari، واضغط زر المشاركة، ثم «إضافة إلى الشاشة الرئيسية».</p>' +
     (n ? '<p><b>مهم:</b> التطبيق المثبّت على آيفون لا يرى السجلات المحفوظة في Safari. صدّر الملف من هنا أولًا، ثم استورده داخل التطبيق المثبّت.</p>' : '');
@@ -2210,6 +2249,11 @@ function bindStatic() {
   $('#importBtn').innerHTML = icon('upload') + 'استيراد ملف';
   $('#exportShare').addEventListener('click', () => exportCSV('share'));
   $('#exportSave').addEventListener('click', () => exportCSV('save'));
+  if (isNative()) {
+    $('#exportShare').innerHTML = icon('share') + 'تصدير الملف (واتساب أو الملفات)';
+    $('#exportSave').hidden = true;
+    document.documentElement.classList.add('native');
+  }
   $('#importBtn').addEventListener('click', () => $('#fileIn').click());
   $('#fileIn').addEventListener('change', e => { const f = e.target.files && e.target.files[0]; e.target.value = ''; if (f) importFile(f); });
 
@@ -2219,7 +2263,7 @@ function bindStatic() {
   document.addEventListener('pointerdown', unlockAudio, { once: true, passive: true });
 }
 function registerSW() {
-  if (!('serviceWorker' in navigator) || location.protocol === 'file:') return;
+  if (isNative() || !('serviceWorker' in navigator) || location.protocol === 'file:') return;
   const had = !!navigator.serviceWorker.controller;
   navigator.serviceWorker.register('sw.js').catch(() => {});
   let reloading = false;
@@ -2227,6 +2271,29 @@ function registerSW() {
     if (!had || reloading) return;
     toast('نسخة أحدث من التطبيق جاهزة.', [{ label: 'تحديث الآن', run: () => { reloading = true; location.reload(); } }], 15000);
   });
+}
+const openedUrls = new Set();
+async function openNativeFile(url) {
+  if (!url || !/^file:/i.test(url) || openedUrls.has(url)) return;
+  openedUrls.add(url);
+  const fs = plug('Filesystem');
+  if (!fs) return;
+  let r;
+  try { r = await fs.readFile({ path: url }); } catch (e) { toast('تعذّرت قراءة الملف المفتوح.'); return; }
+  const bin = atob(r.data || '');
+  const bytes = new Uint8Array(bin.length);
+  for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+  let name = 'shared.csv';
+  try { name = decodeURIComponent(url.split('/').pop().split('?')[0]) || name; } catch (e) { /* keep default */ }
+  if (stack.length && stack[stack.length - 1].kind === 'nl') { closeTop(); await new Promise(res => setTimeout(res, 400)); }
+  showTab('share');
+  await importFile(new File([bytes], name, { type: 'text/csv' }));
+  try { await fs.deleteFile({ path: url }); } catch (e) { /* the copy in the inbox can stay */ }
+}
+function nativeWire() {
+  const app = plug('App');
+  if (!app) return;
+  try { app.addListener('appUrlOpen', ev => { if (ev && ev.url) openNativeFile(ev.url); }); } catch (e) { /* ignore */ }
 }
 async function handleSharedFiles() {
   let pending = null;
@@ -2267,10 +2334,11 @@ async function boot() {
   registerSW();
   requestPersist();
   if (sharedLaunch) handleSharedFiles();
+  nativeWire();
 }
 
 /* exposed for automated tests only */
-window.__mr = { get state() { return state; }, parseCSV, parseImport, planImport, buildCSV, parseISO, parseDateTime, normAr, durWords, arNum };
+window.__mr = { get state() { return state; }, isNative, openNativeFile, parseCSV, parseImport, planImport, buildCSV, parseISO, parseDateTime, normAr, durWords, arNum };
 
 boot();
 })();
