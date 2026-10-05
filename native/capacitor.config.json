@@ -8,5 +8,11 @@
     "backgroundColor": "#e4eae6",
     "scrollEnabled": true,
     "limitsNavigationsToAppBoundDomains": false
+  },
+  "plugins": {
+    "SystemBars": {
+      "insetsHandling": "native",
+      "initialViewportFitValueHint": "cover"
+    }
   }
 }

@@ -80,6 +80,7 @@ jobs:
         run: |
           mkdir -p smoke
           APP=native/ios/App/build-sim/Build/Products/Debug-iphonesimulator/App.app
+          python3 native/ios-localize.py "$APP" index.html
           xcrun simctl install "$UDID" "$APP"
           xcrun simctl launch "$UDID" com.m3athrazaq.murabbiyati
           for t in 05 09 15 21 27; do
@@ -107,4 +108,10 @@ jobs:
         run: |
           gh release delete ci-smoke-test --repo "${{ github.repository }}" --yes --cleanup-tag || true
           gh release create ci-smoke-test smoke/* --repo "${{ github.repository }}" --target "${{ github.sha }}" \
-            --prerelease --title "CI smoke test" --notes "Automated simulator run for ${{ github.sha }}"
+            --prerelease --latest=false --title "CI smoke test" --notes "Automated simulator run for ${{ github.sha }}"
+
+      - name: Fail on test failures
+        run: |
+          grep -c "^PASS" smoke/selftest-result.txt
+          ! grep -E "^(FAIL|ERROR)" smoke/selftest-result.txt
+          grep -q "^DONE" smoke/selftest-result.txt

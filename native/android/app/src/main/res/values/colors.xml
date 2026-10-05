@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Launch screen background (same as the iPhone launch screen). -->
+    <color name="mr_splash_background">#E4EAE6</color>
+    <!-- The page background ("wall") of the web app; dark value in values-night. Shown wherever the
+         WebView does not draw: before the first frame and, when the bars are not drawn edge-to-edge
+         (Android 14 and older, or WebView older than 140), behind the status and navigation bars. -->
+    <color name="mr_background">#E4EAE6</color>
+    <!-- Android 7.x cannot show dark navigation-bar buttons, so its bar stays black (see values-v26). -->
+    <color name="mr_navigation_bar">#000000</color>
+</resources>

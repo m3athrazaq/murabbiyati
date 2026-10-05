@@ -1,0 +1,179 @@
+# Builds both phone apps from the same web files and publishes them together in one release:
+#   iPhone:  murabbiyati.ipa (unsigned; install with SideStore or Sideloadly using a free Apple Account)
+#   Android: murabbiyati.apk (signed with native/signing/murabbiyati-release.p12)
+# Stable links: https://github.com/<owner>/<repo>/releases/latest/download/murabbiyati.ipa (and .apk)
+name: Phone apps (IPA + APK)
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main, iphone-app]
+    paths:
+      - 'index.html'
+      - 'manifest.webmanifest'
+      - '*.png'
+      - 'native/**'
+      - '.github/workflows/apps.yml'
+
+permissions:
+  contents: write
+
+concurrency:
+  group: apps-build
+  cancel-in-progress: true
+
+env:
+  APP_VERSION: '1.1.0'
+  BUILD_NUMBER: ${{ github.run_number }}
+
+jobs:
+  ios:
+    runs-on: macos-26
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: native/package-lock.json
+
+      - name: Copy the app files into the phone project
+        run: |
+          rm -rf native/www && mkdir -p native/www
+          cp index.html manifest.webmanifest *.png native/www/
+
+      - name: Install Capacitor and sync the iOS project
+        working-directory: native
+        run: |
+          npm ci
+          npx cap sync ios
+
+      - name: Build (unsigned)
+        working-directory: native/ios/App
+        run: |
+          xcodebuild -version
+          BUILD=$((BUILD_NUMBER + 100))
+          if ! xcodebuild \
+              -project App.xcodeproj \
+              -scheme App \
+              -configuration Release \
+              -sdk iphoneos \
+              -destination 'generic/platform=iOS' \
+              -derivedDataPath build \
+              MARKETING_VERSION=$APP_VERSION CURRENT_PROJECT_VERSION=$BUILD \
+              CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY="" \
+              build > build.log 2>&1; then
+            echo "::group::errors"; grep -nE "error:|fatal error|Undefined symbol" build.log | head -80; echo "::endgroup::"
+            tail -120 build.log
+            exit 1
+          fi
+          grep -E "BUILD SUCCEEDED" build.log
+          test -d build/Build/Products/Release-iphoneos/App.app
+
+      - name: Languages + package the IPA
+        run: |
+          APP=native/ios/App/build/Build/Products/Release-iphoneos/App.app
+          python3 native/ios-localize.py "$APP" index.html
+          mkdir -p out/Payload
+          cp -R "$APP" out/Payload/
+          cd out && zip -qry murabbiyati.ipa Payload && ls -la murabbiyati.ipa
+          /usr/libexec/PlistBuddy -c "Print :CFBundleIdentifier" -c "Print :CFBundleShortVersionString" -c "Print :CFBundleVersion" Payload/App.app/Info.plist
+          plutil -p Payload/App.app/ar.lproj/InfoPlist.strings
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: murabbiyati-ipa
+          path: out/murabbiyati.ipa
+          if-no-files-found: error
+
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: ios-build-log
+          path: native/ios/App/build.log
+          if-no-files-found: ignore
+
+  android:
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: native/package-lock.json
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 21
+
+      - name: Copy the app files into the phone project
+        run: |
+          rm -rf native/www && mkdir -p native/www
+          cp index.html manifest.webmanifest *.png native/www/
+
+      - name: Install Capacitor and sync the Android project
+        working-directory: native
+        run: |
+          npm ci
+          npx cap sync android
+
+      - name: Build the signed APK
+        working-directory: native/android
+        run: |
+          export VERSION_CODE=$((BUILD_NUMBER + 100))
+          export MR_KEYSTORE="$GITHUB_WORKSPACE/native/signing/murabbiyati-release.p12"
+          export MR_KEYSTORE_PASSWORD="$(sed -n 's/^storePassword=//p' ../signing/keystore.properties)"
+          export MR_KEY_ALIAS="$(sed -n 's/^keyAlias=//p' ../signing/keystore.properties)"
+          chmod +x gradlew
+          ./gradlew --no-daemon assembleRelease
+          ls -la app/build/outputs/apk/release/
+
+      - name: Check the APK
+        run: |
+          APK=native/android/app/build/outputs/apk/release/app-release.apk
+          BT=$(ls -d "$ANDROID_HOME"/build-tools/* | sort -V | tail -1)
+          "$BT/apksigner" verify --verbose --print-certs "$APK" | tee verify.txt
+          grep -qi "C7:9E:91:68:DA:7F:7D:A4:5E:3B:1E:06:B8:72:FD:79:AF:2B:E2:70:5F:8D:86:B2:ED:CC:7B:4F:0C:D7:49:D7\|c79e9168da7f7da45e3b1e06b872fd79af2be2705f8d86b2edcc7b4f0cd749d7" verify.txt
+          "$BT/aapt2" dump badging "$APK" | grep -E "^package:|^sdkVersion|^targetSdkVersion|^application-label:|^application-label-ar|^locales" | cut -c1-300
+          mkdir -p out && cp "$APK" out/murabbiyati.apk && ls -la out/
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: murabbiyati-apk
+          path: out/murabbiyati.apk
+          if-no-files-found: error
+
+  release:
+    needs: [ios, android]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: out
+          merge-multiple: true
+
+      - name: Publish both apps in one release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+        run: |
+          ls -la out
+          TAG="v$APP_VERSION-$BUILD_NUMBER"
+          BASE="https://github.com/$REPO/releases/latest/download"
+          printf '%s\n' \
+            "تطبيق مربّيتي للهاتف — النسخة $APP_VERSION (بناء $BUILD_NUMBER)" "" \
+            "- **أندرويد:** [murabbiyati.apk]($BASE/murabbiyati.apk) — افتح الرابط على الهاتف، ثم ثبّت الملف واسمح بالتثبيت من المتصفح عند السؤال." \
+            "- **آيفون:** [murabbiyati.ipa]($BASE/murabbiyati.ipa) — يُثبَّت عبر SideStore أو Sideloadly بحساب Apple عادي، ويُجدَّد كل 7 أيام." \
+            "" "الروابط أعلاه ثابتة وتشير دائمًا إلى آخر نسخة." > notes.md
+          gh release create "$TAG" out/murabbiyati.ipa out/murabbiyati.apk \
+            --repo "$REPO" \
+            --target "${{ github.sha }}" \
+            --title "مربّيتي $APP_VERSION ($BUILD_NUMBER)" \
+            --notes-file notes.md \
+            --latest
