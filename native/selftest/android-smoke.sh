@@ -58,8 +58,14 @@ if waitfor "WAIT back2" 60; then sleep 1; shot 07-log; adb shell input keyevent 
 if waitfor "WAIT back3" 60; then
   sleep 1; shot 08-home
   adb shell input keyevent KEYCODE_BACK
-  sleep 3; shot 09-after-back
+  # leaving the app can take a few seconds on a busy emulator: wait until another app is in front
+  for _ in $(seq 1 20); do
+    sleep 1
+    adb shell dumpsys activity activities | grep -E "topResumedActivity" | grep -q "$PKG" || break
+  done
+  shot 09-after-back
   adb shell dumpsys activity activities | grep -E "ResumedActivity" | head -3 | tee "$OUT/after-back.txt"
+  sleep 2
   adb shell am start -n "$PKG/.MainActivity"
 fi
 waitfor "STEP language" 90 && sleep 1 && shot 17-other-language

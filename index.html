@@ -290,7 +290,7 @@ html[data-theme="dark"] .btn.danger{color:#1a0c0b}
 .row-ico .ico{width:23px;height:23px}
 .row-main{min-width:0;display:flex;flex-direction:column;gap:1px}
 .row-title{font-weight:600}
-.row-sub{font-weight:450;color:var(--ink-3);font-size:14.5px;margin-inline-start:4px}
+.row-sub{font-weight:450;color:var(--ink-3);font-size:14.5px;margin-inline-start:6px;unicode-bidi:isolate}
 .row-note{font-size:14.5px;color:var(--ink-2);white-space:pre-wrap;overflow-wrap:anywhere}
 .row-time{font-size:16px;font-weight:600;white-space:nowrap;font-variant-numeric:tabular-nums}
 .empty-state{background:var(--paper);border-radius:20px;padding:28px 20px;text-align:center;color:var(--ink-2)}
@@ -542,7 +542,7 @@ input[type="number"]{width:100%;min-height:50px;border-radius:14px;border:1.5px 
 .sleep-preview{color:var(--ink);font-weight:550}
 
 /* home: what's coming */
-.upcoming{width:100%;max-width:520px;background:var(--paper);border-radius:18px;padding:8px 10px;margin:2px 0 10px;box-shadow:inset 0 0 0 1.5px color-mix(in srgb,var(--c-appt) 35%,transparent)}
+.upcoming{width:100%;max-width:520px;background:var(--paper);border-radius:18px;padding:8px 10px;margin:14px 0 4px;box-shadow:inset 0 0 0 1.5px color-mix(in srgb,var(--c-appt) 35%,transparent)}
 .up-head{display:flex;align-items:center;gap:6px;font-size:13px;font-weight:600;color:var(--ink-2);padding:2px 4px 4px}
 .up-head .ico{width:16px;height:16px;color:var(--c-appt)}
 .up-list{display:flex;flex-direction:column;gap:8px}
@@ -564,8 +564,9 @@ input[type="number"]{width:100%;min-height:50px;border-radius:14px;border:1.5px 
 .allergy{display:flex;gap:8px;align-items:flex-start;margin:10px 0 0;padding:10px 12px;border-radius:14px;background:var(--tint-warn);color:var(--warn);font-size:14.5px;font-weight:550;line-height:1.5}
 .allergy .ico{width:20px;height:20px;flex:none;margin-top:1px}
 .sec-head{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-top:26px}
-.sec-head .section-title{margin:0;display:flex;align-items:center;gap:8px}
-.sec-head .section-title .ico{width:21px;height:21px;color:var(--ink-3)}
+.sec-head .section-title{margin:0;display:flex;align-items:center;gap:8px;min-width:0;flex:1 1 auto;overflow-wrap:anywhere}
+.sec-head .section-title .ico{width:21px;height:21px;color:var(--ink-3);flex:none}
+.sec-head .btn{flex:none;max-width:48%}
 .sec-actions{margin-top:12px}
 .sec-actions .btn{padding-inline:10px;font-size:15px}
 .sub-title{font-size:14.5px;font-weight:600;color:var(--ink-2);margin:16px 4px 8px;display:flex;gap:6px;align-items:baseline}
@@ -733,8 +734,8 @@ html[data-layout="contrast"] .chip[aria-pressed="true"],html[data-layout="contra
   <main>
     <section class="view home" id="view-home" data-view="home" data-i18n-aria="tab.home" aria-label="الرئيسية">
       <div class="install-banner" id="installBanner" hidden></div>
-      <div class="upcoming" id="upcoming" hidden></div>
       <div class="device" id="device"></div>
+      <div class="upcoming" id="upcoming" hidden></div>
       <p class="home-hint" id="homeHint" hidden data-i18n="home.hint">اضغط أي زر لتسجيل الوقت الحالي.</p>
     </section>
 
@@ -1791,6 +1792,17 @@ function bindHome() {
   const release = () => $$('#device .key.pressed').forEach(k => k.classList.remove('pressed'));
   ['pointerup', 'pointercancel', 'pointerleave'].forEach(ev => dev.addEventListener(ev, release));
 }
+/* a label longer than its cell (some languages, long event names) gets a slightly smaller font instead of being cut */
+function fitLabel(el) {
+  if (!el) return;
+  if (el.style.fontSize) el.style.fontSize = '';
+  const over = el.scrollWidth - el.clientWidth;
+  if (over <= 1 || !el.clientWidth) return;
+  const base = parseFloat(getComputedStyle(el).fontSize) || 14;
+  el.style.fontSize = Math.max(11, Math.floor(base * el.clientWidth / el.scrollWidth * 10) / 10) + 'px';
+}
+let fitTimer = 0;
+window.addEventListener('resize', () => { clearTimeout(fitTimer); fitTimer = setTimeout(() => $$('#device .cell-label').forEach(fitLabel), 150); });
 function renderHome() {
   const now = Date.now(), d = derived();
   const today = d.dayCounts.get(dayKey(now)) || {};
@@ -1806,6 +1818,7 @@ function renderHome() {
       const ik = ph === 'wake' ? 'wake' : 'sleep';
       if (el.icoKey !== ik) { el.ico.innerHTML = icon(ik); el.icoKey = ik; }
     } else el.label.textContent = type === 'other' && r ? otherLabel(r) : typeShort(type);
+    fitLabel(el.label);
     if (!r) el.last.textContent = tr(type === 'sleep' ? 'sleep.none' : 'cell.notYet');
     else {
       const rel = relDay(r.ts, now);
@@ -2990,7 +3003,8 @@ function showTab(tab, fromPop) {
   window.scrollTo(0, 0);
 }
 function renderView(tab) {
-  if (tab === 'log') renderLog();
+  if (tab === 'home') $$('#device .cell-label').forEach(fitLabel);
+  else if (tab === 'log') renderLog();
   else if (tab === 'stats') renderStats();
   else if (tab === 'share') renderShare();
   else if (tab === 'health') renderHealth();
@@ -3731,7 +3745,7 @@ function relDays(k) {
   if (n === -1) return tr('yesterday');
   return n > 0 ? tr('rel.inDays', { d: tr('dur.d', { n: n }) }) : tr('dur.ago', { d: tr('dur.d', { n: -n }) });
 }
-const vaxTitle = v => v.name + (v.dose ? ' — ' + v.dose : '');
+const vaxTitle = v => bidiIso(v.name) + (v.dose ? ' — ' + bidiIso(v.dose) : '');
 
 /* ---------- what's coming (home banner and the top of the Health tab) ---------- */
 function upcomingItems(cid, days) {
@@ -3780,7 +3794,7 @@ function renderHealth() {
     const st = vaxStatus(v);
     const when = st === 'given' ? tr('vax.givenOn', { date: fmtDay(v.given) }) : st === 'nodate' ? tr('vax.noDate') : st === 'overdue' ? tr('vax.overdueOn', { date: fmtDay(v.due) }) : tr('vax.dueOn', { date: fmtDay(v.due), rel: relDays(v.due) });
     return '<li><button class="row h-row" type="button" data-vax="' + esc(v.id) + '"><span class="row-ico vax ' + st + '">' + icon(st === 'given' ? 'check' : 'syringe') + '</span>' +
-      '<span class="row-main"><span class="row-title">' + esc(v.name) + (v.dose ? '<span class="row-sub">' + esc(v.dose) + '</span>' : '') + '</span><span class="row-note">' + esc(when) + '</span></span>' +
+      '<span class="row-main"><span class="row-title"><bdi>' + esc(v.name) + '</bdi>' + (v.dose ? '<span class="row-sub">' + esc(v.dose) + '</span>' : '') + '</span><span class="row-note">' + esc(when) + '</span></span>' +
       (st !== 'given' && v.remind && v.due ? '<span class="row-flag">' + icon('bell') + '</span>' : '') + '</button></li>';
   };
   const apptRow = a => '<li><button class="row h-row" type="button" data-appt="' + esc(a.id) + '"><span class="row-ico appt">' + icon('calendar') + '</span>' +
@@ -4233,16 +4247,23 @@ async function primeOcrLang(code) {
     const key = OCR_CACHE_PATH + '/' + code + '.traineddata';
     const has = await new Promise(r => { const q = db.transaction('keyval').objectStore('keyval').count(key); q.onsuccess = () => r(q.result > 0); q.onerror = () => r(false); });
     if (has) return;
-    const res = await fetch(ocrUrl('lang/' + code + '.traineddata.gz'));
+    let res = await fetch(ocrUrl('lang/' + code + '.traineddata.gz'));
+    /* the Android app's build unpacks .gz files and drops the extension */
+    if (!res.ok) res = await fetch(ocrUrl('lang/' + code + '.traineddata'));
     if (!res.ok) return;
     const data = new Uint8Array(await res.arrayBuffer());
     await new Promise(r => { const tx = db.transaction('keyval', 'readwrite'); tx.objectStore('keyval').put(data, key); tx.oncomplete = r; tx.onerror = r; tx.onabort = r; });
   } catch (e) { /* the reader fetches it itself */ } finally { if (db) db.close(); }
 }
+const ocrTimeout = (ms, what) => new Promise((_, reject) => setTimeout(() => reject(new Error(what)), ms));
 async function ocrWorker(onProgress) {
   if (!ocrLib) { await loadScript(ocrUrl('tesseract.min.js')); ocrLib = window.Tesseract; }
   if (!ocrLib) throw new Error('no-ocr');
   const urls = [];
+  /* an error inside the reader (a missing file, no memory) ends the wait instead of leaving it hanging */
+  let fail = null;
+  const failed = new Promise((_, reject) => { fail = reject; });
+  failed.catch(() => { /* reported through the race below */ });
   try {
     onProgress && onProgress('loading', 0.05);
     const workerUrl = await ocrBlobUrl('worker.min.js', 'text/javascript'); urls.push(workerUrl);
@@ -4251,14 +4272,16 @@ async function ocrWorker(onProgress) {
     onProgress && onProgress('loading', 0.55);
     await primeOcrLang('ara'); onProgress && onProgress('loading', 0.75);
     await primeOcrLang('eng'); onProgress && onProgress('loading', 0.9);
-    const worker = await ocrLib.createWorker(['ara', 'eng'], 1, {
+    const worker = await Promise.race([ocrLib.createWorker(['ara', 'eng'], 1, {
       workerPath: workerUrl,
       corePath: coreUrl + '#core.js',                    /* ends in "js": the reader loads exactly this file */
-      langPath: ocrUrl('lang'), cachePath: OCR_CACHE_PATH, cacheMethod: 'write', gzip: true, workerBlobURL: false,
+      langPath: ocrUrl('lang'), cachePath: OCR_CACHE_PATH, cacheMethod: 'write', gzip: nativePlatform() !== 'android', workerBlobURL: false,
       logger: m => { if (onProgress && m && /recogniz/i.test(m.status || '')) onProgress(m.status, typeof m.progress === 'number' ? m.progress : 0); },
-    });
+      errorHandler: e => fail(e instanceof Error ? e : new Error(String(e))),
+    }), failed, ocrTimeout(120000, 'ocr-start-timeout')]);
     const end = worker.terminate.bind(worker);
     worker.terminate = async () => { try { return await end(); } finally { urls.forEach(u => URL.revokeObjectURL(u)); } };
+    worker.failed = failed;
     return worker;
   } catch (e) {
     urls.forEach(u => URL.revokeObjectURL(u));
@@ -4433,7 +4456,7 @@ async function readCard(blob, onStep) {
     });
     const cv = await prepareForOcr(blob);
     await worker.setParameters({ tessedit_pageseg_mode: '4', preserve_interword_spaces: '1', user_defined_dpi: '300' });
-    const res = await worker.recognize(cv, {}, { blocks: true, text: true });
+    const res = await Promise.race([worker.recognize(cv, {}, { blocks: true, text: true }), worker.failed, ocrTimeout(180000, 'ocr-timeout')]);
     return parseCard(ocrLines(res.data));
   } finally {
     if (worker) { try { await worker.terminate(); } catch (e) { /* ignore */ } }
