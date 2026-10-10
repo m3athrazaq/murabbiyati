@@ -194,6 +194,7 @@ html[data-theme="dark"] .lcd{box-shadow:inset 0 3px 12px rgba(0,0,0,.7),inset 0 
 .cell-foot{display:flex;flex-direction:column;align-items:flex-start;gap:0;width:100%;font-size:13px;color:var(--lcd-dim);line-height:1.35}
 .cell-last{min-width:0;max-width:100%;overflow-wrap:anywhere}
 .cell-last.has-time{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.cell-last.has-time.wrap2{white-space:normal;overflow:visible;text-overflow:clip;line-height:1.25}
 /* the time moves to the next line as a whole when "Last:" and the time don't fit on one line */
 .cell-last b{display:inline-block;max-width:100%}
 .cell-last b,.cell-today b{color:var(--lcd-ink);font-weight:600}
@@ -761,7 +762,7 @@ html[data-layout="contrast"] .nf-label,html[data-layout="contrast"] .nf-sub{colo
   /* the next feed added a line to the display: win the height back so the four buttons stay above the tabs */
   .lcd-top{padding-bottom:5px}
   .layout-classic .cell-time{margin:3px 0 2px}
-  .layout-classic .key{min-height:66px}
+  .layout-classic .key{min-height:62px}
   .keys{margin-top:9px;gap:8px}
   .device.layout-contrast .m-key{min-height:58px}
   .device.layout-contrast .mcard{padding-block:8px 8px}
@@ -1853,15 +1854,18 @@ function bindHome() {
   ['pointerup', 'pointercancel', 'pointerleave'].forEach(ev => dev.addEventListener(ev, release));
 }
 /* a label longer than its cell (some languages, long event names) gets a slightly smaller font instead of being cut */
-function fitLabel(el, min) {
+function fitLabel(el, min, wrap) {
   if (!el) return;
+  el.classList.remove('wrap2');
   if (el.style.fontSize) el.style.fontSize = '';
   const over = el.scrollWidth - el.clientWidth;
   if (over <= 1 || !el.clientWidth) return;
   const base = parseFloat(getComputedStyle(el).fontSize) || 14;
-  el.style.fontSize = Math.max(min || 11, Math.floor(base * el.clientWidth / el.scrollWidth * 10) / 10) + 'px';
+  const size = Math.floor(base * el.clientWidth / el.scrollWidth * 10) / 10;
+  if (!wrap || size >= (min || 11)) { el.style.fontSize = Math.max(min || 11, size) + 'px'; return; }
+  el.classList.add('wrap2');   /* still too long at the smallest size: two lines rather than cutting it */
 }
-const fitHomeTexts = () => { $$('#device .cell-label').forEach(e => fitLabel(e)); $$('#device .cell-last.has-time').forEach(e => fitLabel(e, 10.5)); };
+const fitHomeTexts = () => { $$('#device .cell-label').forEach(e => fitLabel(e)); $$('#device .cell-last.has-time').forEach(e => fitLabel(e, 11, true)); };
 let fitTimer = 0;
 window.addEventListener('resize', () => { clearTimeout(fitTimer); fitTimer = setTimeout(fitHomeTexts, 150); });
 function renderHome() {
@@ -1887,7 +1891,7 @@ function renderHome() {
       el.last.innerHTML = trh(key, { time: when, label: type === 'other' ? otherLabel(r) : '' }, ['time']);
     }
     el.last.classList.toggle('has-time', !!r);
-    if (r) fitLabel(el.last, 10.5); else el.last.style.fontSize = '';
+    if (r) fitLabel(el.last, 11, true); else { el.last.style.fontSize = ''; el.last.classList.remove('wrap2'); }
     if (type === 'sleep' && state.settings.sleepCalc) {
       const w = currentSleepSpan(now);
       el.todayWrap.innerHTML = trh('cell.sleepTotal', { d: durCompact(sleepTotalIn(w[0], w[1])) }, ['d']).replace('<b>', '<b class="num">');
@@ -3237,6 +3241,8 @@ async function boot() {
   applyLook();
   history.replaceState({ m: 'root' }, '', location.pathname + location.hash);
   renderAll();
+  /* labels are fitted to their cells with the app's own font: measure again once it has loaded */
+  if (document.fonts && document.fonts.ready) document.fonts.ready.then(() => fitHomeTexts()).catch(() => {});
   startTicker();
   if (!loaded) persist();
   try {

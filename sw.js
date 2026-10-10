@@ -1,5 +1,5 @@
 /* مربّيتي — service worker: keeps the app working offline and receives shared CSV files */
-const VERSION = 'murabbiyati-v1.0.0-def751ef32';
+const VERSION = 'murabbiyati-v1.0.0-7a5c032e7c';
 /* the card reader's files (~9 MB) are cached on first use, in their own cache that app updates keep */
 const OCR_CACHE = 'murabbiyati-ocr-eddbb7af58';
 const ASSETS = [
